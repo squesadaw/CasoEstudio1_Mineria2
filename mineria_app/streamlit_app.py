@@ -3,21 +3,20 @@ Aplicación de Minería de Datos Avanzada
 Autores: Jorge Chacón, Stacy Quesada
 """
 
-import warnings
-import os
-import io
-import numpy as np
-import pandas as pd
-import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+# FIX: Forzar importación y reload del módulo para evitar caché de Streamlit
 import matplotlib
-matplotlib.use("Agg")
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+import plotly.express as px
+import streamlit as st
+import pandas as pd
+import numpy as np
+import io
+import os
+import warnings
 import matplotlib.pyplot as plt
 import seaborn as sns
 from dateutil.parser import parse as dateutil_parse
-
 from paquete_mineria2 import EDA, Supervisado, SeriesTiempo
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
@@ -28,6 +27,12 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 import traceback
+import importlib
+import sys
+import paquete_mineria2
+importlib.reload(paquete_mineria2)
+
+matplotlib.use("Agg")
 
 warnings.filterwarnings("ignore")
 
@@ -203,7 +208,8 @@ PLOTLY_LAYOUT = dict(
     paper_bgcolor="#13161e",
     plot_bgcolor="#13161e",
     font=dict(family="DM Sans", color="#e8eaf0"),
-    colorway=["#4ade80", "#60a5fa", "#f59e0b", "#f87171", "#c084fc", "#34d399"],
+    colorway=["#4ade80", "#60a5fa", "#f59e0b",
+              "#f87171", "#c084fc", "#34d399"],
 )
 PLOTLY_THEME = dict(template="plotly_dark", **PLOTLY_LAYOUT)
 
@@ -213,6 +219,8 @@ DATA_PATH = "/Users/stacyquesada/Documents/ULEAD/Mineria de Datos Avanzada/CasoE
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════
+
+
 def parse_dates_column(col):
     ser = pd.to_datetime(col, errors='coerce', utc=True)
     if ser.notna().all():
@@ -251,7 +259,8 @@ def metric_html(label, value, style=""):
 
 
 def section(title):
-    st.markdown(f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='section-title'>{title}</div>", unsafe_allow_html=True)
 
 
 def compute_auc_multiclass(modelo_pipeline, X_test, y_test):
@@ -272,7 +281,8 @@ def compute_auc_multiclass(modelo_pipeline, X_test, y_test):
             y_bin = label_binarize(y_test, classes=classes)
             fpr_dict, tpr_dict, auc_dict = {}, {}, {}
             for i, cls in enumerate(classes):
-                fpr_dict[cls], tpr_dict[cls], _ = roc_curve(y_bin[:, i], y_prob[:, i])
+                fpr_dict[cls], tpr_dict[cls], _ = roc_curve(
+                    y_bin[:, i], y_prob[:, i])
                 auc_dict[cls] = auc(fpr_dict[cls], tpr_dict[cls])
             # macro
             all_fpr = np.unique(np.concatenate([fpr_dict[c] for c in classes]))
@@ -368,11 +378,13 @@ if pagina == "📂  Carga de datos":
                     archivo.seek(0)
                     df = pd.read_csv(archivo, sep=sep_real, decimal=dec,
                                      engine='python', encoding='latin1')
+                # df = normalizar_tipos_dataframe(df)  # FIX: función removida
                 st.session_state["df"] = df
                 st.session_state.pop("modelo_sup", None)
                 st.session_state.pop("train", None)
                 st.session_state.pop("test", None)
-                st.success(f"✓ Dataset cargado — {df.shape[0]:,} filas × {df.shape[1]} columnas")
+                st.success(
+                    f"✓ Dataset cargado — {df.shape[0]:,} filas × {df.shape[1]} columnas")
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
 
@@ -381,15 +393,19 @@ if pagina == "📂  Carga de datos":
             st.warning(f"No se encontró la carpeta `data/` en `{DATA_PATH}`. "
                        "Créela junto a `app.py` y coloque sus archivos CSV dentro.")
         else:
-            csv_files = sorted([f for f in os.listdir(DATA_PATH) if f.lower().endswith(".csv")])
+            csv_files = sorted([f for f in os.listdir(
+                DATA_PATH) if f.lower().endswith(".csv")])
             if not csv_files:
-                st.warning("La carpeta `data/` existe pero no contiene archivos CSV.")
+                st.warning(
+                    "La carpeta `data/` existe pero no contiene archivos CSV.")
             else:
                 col_ds, col_ds_sep, col_ds_dec = st.columns(3)
                 with col_ds:
-                    ds_name = st.selectbox("Seleccione un dataset", csv_files, key="ds_predefined")
+                    ds_name = st.selectbox(
+                        "Seleccione un dataset", csv_files, key="ds_predefined")
                 with col_ds_sep:
-                    ds_sep = st.selectbox("Separador", [",", ";", "\\t", "|"], key="ds_sep")
+                    ds_sep = st.selectbox(
+                        "Separador", [",", ";", "\\t", "|"], key="ds_sep")
                 with col_ds_dec:
                     ds_dec = st.selectbox("Decimal", [".", ","], key="ds_dec")
 
@@ -403,11 +419,13 @@ if pagina == "📂  Carga de datos":
                         except UnicodeDecodeError:
                             df = pd.read_csv(fpath, sep=sep_real, decimal=ds_dec,
                                              engine='python', encoding='latin1')
+                        # df = normalizar_tipos_dataframe(df)  # FIX: función removida
                         st.session_state["df"] = df
                         st.session_state.pop("modelo_sup", None)
                         st.session_state.pop("train", None)
                         st.session_state.pop("test", None)
-                        st.success(f"✓ {ds_name} cargado — {df.shape[0]:,} filas × {df.shape[1]} columnas")
+                        st.success(
+                            f"✓ {ds_name} cargado — {df.shape[0]:,} filas × {df.shape[1]} columnas")
                     except Exception as e:
                         st.error(f"Error al leer {ds_name}: {e}")
 
@@ -418,15 +436,19 @@ if pagina == "📂  Carga de datos":
 
         m1, m2, m3, m4 = st.columns(4)
         with m1:
-            st.markdown(metric_html("Filas", f"{df.shape[0]:,}"), unsafe_allow_html=True)
+            st.markdown(metric_html(
+                "Filas", f"{df.shape[0]:,}"), unsafe_allow_html=True)
         with m2:
-            st.markdown(metric_html("Columnas", df.shape[1], "neutral"), unsafe_allow_html=True)
+            st.markdown(metric_html(
+                "Columnas", df.shape[1], "neutral"), unsafe_allow_html=True)
         with m3:
             n_num = df.select_dtypes(include="number").shape[1]
-            st.markdown(metric_html("Numéricas", n_num, "neutral"), unsafe_allow_html=True)
+            st.markdown(metric_html("Numéricas", n_num, "neutral"),
+                        unsafe_allow_html=True)
         with m4:
             n_null = int(df.isnull().sum().sum())
-            st.markdown(metric_html("Nulos", n_null, "warn" if n_null > 0 else ""), unsafe_allow_html=True)
+            st.markdown(metric_html("Nulos", n_null,
+                        "warn" if n_null > 0 else ""), unsafe_allow_html=True)
 
         st.dataframe(df.head(10), use_container_width=True)
 
@@ -457,7 +479,8 @@ elif pagina == "🔍  EDA":
 
     # ── Estadísticas ──────────────────────────────────────────────────────────
     section("Estadísticas descriptivas")
-    st.dataframe(df.describe(include="all").T.round(4), use_container_width=True)
+    st.dataframe(df.describe(include="all").T.round(4),
+                 use_container_width=True)
 
     # ── Nulos ─────────────────────────────────────────────────────────────────
     nulls = df.isnull().sum()
@@ -488,7 +511,8 @@ elif pagina == "🔍  EDA":
             texttemplate="%{text}",
             showscale=True,
         ))
-        fig_corr.update_layout(title="Correlación entre variables numéricas", **plotly_fig(), height=500)
+        fig_corr.update_layout(
+            title="Correlación entre variables numéricas", **plotly_fig(), height=500)
         st.plotly_chart(fig_corr, use_container_width=True)
 
     # ── Distribuciones ────────────────────────────────────────────────────────
@@ -504,7 +528,8 @@ elif pagina == "🔍  EDA":
             nrows = -(-len(cols_dist) // ncols)
             fig_dist = make_subplots(rows=nrows, cols=ncols,
                                      subplot_titles=cols_dist)
-            colors = ["#4ade80", "#60a5fa", "#f59e0b", "#f87171", "#c084fc", "#34d399"]
+            colors = ["#4ade80", "#60a5fa", "#f59e0b",
+                      "#f87171", "#c084fc", "#34d399"]
             for i, col in enumerate(cols_dist):
                 r, c = divmod(i, ncols)
                 fig_dist.add_trace(
@@ -542,7 +567,8 @@ elif pagina == "🔍  EDA":
         section("Scatter matrix (pares de variables)")
         cols_scatter = df_num.columns.tolist()[:min(5, len(df_num.columns))]
         color_col = None
-        cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+        cat_cols = df.select_dtypes(
+            include=["object", "category"]).columns.tolist()
         if cat_cols:
             color_col = st.selectbox("Color por variable categórica (opcional)",
                                      ["—"] + cat_cols)
@@ -555,7 +581,8 @@ elif pagina == "🔍  EDA":
             title="Scatter Matrix",
             **plotly_px(),
         )
-        fig_scatter.update_traces(diagonal_visible=False, marker_size=3, opacity=0.7)
+        fig_scatter.update_traces(
+            diagonal_visible=False, marker_size=3, opacity=0.7)
         fig_scatter.update_layout(**PLOTLY_LAYOUT)
         st.plotly_chart(fig_scatter, use_container_width=True)
 
@@ -578,25 +605,54 @@ elif pagina == "🤖  Clasificación":
 
     col_tgt, col_tipo = st.columns(2)
     with col_tgt:
-        target = st.selectbox("Variable objetivo (target)", df.columns.tolist())
+        target = st.selectbox(
+            "Variable objetivo (target)", df.columns.tolist())
     with col_tipo:
-        tipo = st.radio("Tipo de problema", ["Clasificación", "Regresión"], horizontal=True)
+        tipo = st.radio("Tipo de problema", [
+                        "Clasificación", "Regresión"], horizontal=True)
 
     col_ts, col_rs = st.columns(2)
     with col_ts:
-        test_size = st.slider("Tamaño del conjunto de prueba (%)", 10, 40, 25) / 100
+        test_size = st.slider(
+            "Tamaño del conjunto de prueba (%)", 10, 40, 25) / 100
     with col_rs:
         random_state = st.slider("Semilla aleatoria", 0, 100, 42)
 
+    # FIX: Validar tipo de problema vs tipo de variable
+    n_unique = df[target].nunique()
+    es_continuo = n_unique >= 20
+
+    if tipo == "Clasificación" and es_continuo:
+        st.warning(
+            f"⚠️ **Advertencia**: '{target}' tiene {n_unique} valores únicos (parece **continua**).\n\n"
+            f"Para **Clasificación** necesitás una variable con <20 clases distint as.\n\n"
+            f"**Recomendación**: Cambiá a **Regresión** para esta variable."
+        )
+    elif tipo == "Regresión" and not es_continuo:
+        st.info(
+            f"ℹ️  '{target}' tiene solo {n_unique} valores únicos (parece **discreta**).\n\n"
+            f"Es más apropiado para **Clasificación**, pero podés usar Regresión si lo preferís."
+        )
+
     if st.button("⬡  Preparar datos"):
+        # Validación estricta: no permitir Clasificación con variable continua
+        if tipo == "Clasificación" and es_continuo:
+            st.error(
+                f"❌ No es posible usar Clasificación con '{target}' (variable continua).\n\n"
+                f"Por favor, seleccioná **Regresión**."
+            )
+            st.stop()
+
         with st.spinner("Preparando datos…"):
             try:
                 modelo_sup = Supervisado(df=df, target_col=target)
-                modelo_sup.preparar_datos(test_size=test_size, random_state=random_state)
+                modelo_sup.preparar_datos(
+                    test_size=test_size, random_state=random_state)
                 st.session_state["modelo_sup"] = modelo_sup
                 st.session_state["target_col"] = target
                 st.session_state["tipo_prob"] = tipo
-                st.success(f"✓ Datos preparados — Train: {modelo_sup.X_train.shape[0]:,} · Test: {modelo_sup.X_test.shape[0]:,}")
+                st.success(
+                    f"✓ Datos preparados — Train: {modelo_sup.X_train.shape[0]:,} · Test: {modelo_sup.X_test.shape[0]:,}")
             except Exception as e:
                 st.error(f"Error al preparar los datos: {e}")
                 st.stop()
@@ -637,18 +693,21 @@ elif pagina == "🤖  Clasificación":
             section("Parámetros de validación cruzada")
             ci1, ci2, ci3 = st.columns(3)
             with ci1:
-                modelo_sel = st.selectbox("Modelo", list(ESTIMATOR_MAP.keys()), key="ind_model")
+                modelo_sel = st.selectbox("Modelo", list(
+                    ESTIMATOR_MAP.keys()), key="ind_model")
             with ci2:
                 n_folds_ind = st.slider("Folds (k)", 2, 15, 5, key="ind_folds")
                 cv_method_ind = st.selectbox("Método CV",
                                              ["stratified", "kfold"], key="ind_cv")
             with ci3:
                 scoring_ind = st.selectbox("Métrica primaria",
-                    ["accuracy", "f1_weighted", "precision_weighted", "recall_weighted"],
-                    key="ind_scoring")
+                                           ["accuracy", "f1_weighted",
+                                               "precision_weighted", "recall_weighted"],
+                                           key="ind_scoring")
                 balance_ind = st.selectbox("Balanceo",
-                    ["none", "oversample", "undersample", "smote", "class_weight"],
-                    key="ind_balance")
+                                           ["none", "oversample", "undersample",
+                                               "smote", "class_weight"],
+                                           key="ind_balance")
 
             if st.button("▶  Ejecutar validación cruzada", key="run_ind"):
                 estimator = ESTIMATOR_MAP[modelo_sel]
@@ -662,7 +721,8 @@ elif pagina == "🤖  Clasificación":
                             balance_method=None if balance_ind == "none" else balance_ind,
                         )
                         section("Resultados — métricas CV")
-                        st.dataframe(df_metrics.round(4), use_container_width=True, hide_index=True)
+                        st.dataframe(df_metrics.round(
+                            4), use_container_width=True, hide_index=True)
 
                         fig_m = px.bar(
                             df_metrics, x="Métrica", y="Test (promedio)",
@@ -671,7 +731,8 @@ elif pagina == "🤖  Clasificación":
                             color="Métrica",
                             **plotly_px(),
                         )
-                        fig_m.update_layout(**PLOTLY_LAYOUT, showlegend=False, yaxis_range=[0, 1])
+                        fig_m.update_layout(
+                            **PLOTLY_LAYOUT, showlegend=False, yaxis_range=[0, 1])
                         st.plotly_chart(fig_m, use_container_width=True)
 
                     except Exception as e:
@@ -679,7 +740,8 @@ elif pagina == "🤖  Clasificación":
 
             st.markdown("---")
             section("Curva ROC — AUC")
-            st.caption("Entrena el modelo sobre el split train/test y calcula la curva ROC.")
+            st.caption(
+                "Entrena el modelo sobre el split train/test y calcula la curva ROC.")
 
             if st.button("▶  Calcular AUC y curva ROC", key="run_auc"):
                 estimator_cls = ESTIMATOR_MAP[modelo_sel]
@@ -689,16 +751,29 @@ elif pagina == "🤖  Clasificación":
                             clf = estimator_cls(random_state=42)
                         except TypeError:
                             clf = estimator_cls()
-                        pipe = make_pipeline(SimpleImputer(strategy='median'), StandardScaler(), clf)
-                        pipe.fit(modelo_sup.X_train, modelo_sup.y_train)
+                        pipe = make_pipeline(SimpleImputer(
+                            strategy='median'), StandardScaler(), clf)
+
+                        # FIX: Aplicar el MISMO balanceo que se seleccionó en CV
+                        # para que AUC sea consistente con las métricas de CV
+                        X_train_auc, y_train_auc = modelo_sup.X_train, modelo_sup.y_train
+                        if balance_ind != "none":
+                            X_train_auc, y_train_auc = modelo_sup._balance_data(
+                                modelo_sup.X_train, modelo_sup.y_train,
+                                method=balance_ind, random_state=42
+                            )
+
+                        pipe.fit(X_train_auc, y_train_auc)
 
                         auc_dict, roc_dict, classes = compute_auc_multiclass(
                             pipe, modelo_sup.X_test, modelo_sup.y_test)
 
                         if auc_dict is None:
-                            st.warning("El modelo no soporta predict_proba, AUC no disponible.")
+                            st.warning(
+                                "El modelo no soporta predict_proba, AUC no disponible.")
                         else:
-                            macro_auc = auc_dict.get("macro", list(auc_dict.values())[0])
+                            macro_auc = auc_dict.get(
+                                "macro", list(auc_dict.values())[0])
                             st.markdown(
                                 f"<div class='metric-grid'>"
                                 + metric_html("AUC Macro", f"{macro_auc:.4f}", "neutral" if macro_auc >= 0.7 else "warn")
@@ -711,7 +786,8 @@ elif pagina == "🤖  Clasificación":
                             fig_roc = go.Figure()
                             fig_roc.add_shape(type="line", x0=0, x1=1, y0=0, y1=1,
                                               line=dict(dash="dash", color="#4b5563", width=1))
-                            palette = ["#4ade80", "#60a5fa", "#f59e0b", "#f87171", "#c084fc"]
+                            palette = ["#4ade80", "#60a5fa",
+                                       "#f59e0b", "#f87171", "#c084fc"]
                             if len(classes) == 2:
                                 fpr, tpr = roc_dict["macro"]
                                 fig_roc.add_trace(go.Scatter(
@@ -725,14 +801,16 @@ elif pagina == "🤖  Clasificación":
                                     fig_roc.add_trace(go.Scatter(
                                         x=fpr, y=tpr, mode="lines",
                                         name=f"Clase {cls} (AUC={auc_dict[cls]:.3f})",
-                                        line=dict(color=palette[i % len(palette)], width=1.8),
+                                        line=dict(
+                                            color=palette[i % len(palette)], width=1.8),
                                     ))
                                 # macro
                                 fpr_m, tpr_m = roc_dict["macro"]
                                 fig_roc.add_trace(go.Scatter(
                                     x=fpr_m, y=tpr_m, mode="lines",
                                     name=f"Macro (AUC={macro_auc:.3f})",
-                                    line=dict(color="#fff", width=2.5, dash="dot"),
+                                    line=dict(color="#fff",
+                                              width=2.5, dash="dot"),
                                 ))
                             fig_roc.update_layout(
                                 title=f"Curva ROC — {modelo_sel}",
@@ -751,13 +829,16 @@ elif pagina == "🤖  Clasificación":
             section("Comparar todos los modelos")
             cb1, cb2, cb3 = st.columns(3)
             with cb1:
-                n_folds_bench = st.slider("Folds (k)", 2, 15, 5, key="bench_folds")
+                n_folds_bench = st.slider(
+                    "Folds (k)", 2, 15, 5, key="bench_folds")
             with cb2:
-                cv_bench = st.selectbox("Método CV", ["stratified", "kfold"], key="bench_cv")
+                cv_bench = st.selectbox(
+                    "Método CV", ["stratified", "kfold"], key="bench_cv")
             with cb3:
                 balance_bench = st.selectbox("Balanceo",
-                    ["none", "oversample", "undersample", "smote"],
-                    key="bench_balance")
+                                             ["none", "oversample",
+                                                 "undersample", "smote"],
+                                             key="bench_balance")
 
             if st.button("▶  Ejecutar Benchmark de Modelos", key="run_bench"):
                 with st.spinner("Evaluando todos los modelos…"):
@@ -768,32 +849,40 @@ elif pagina == "🤖  Clasificación":
                             n_folds=n_folds_bench,
                         )
                         section("Tabla de resultados")
-                        st.dataframe(df_bench.round(4), use_container_width=True, hide_index=True)
+                        st.dataframe(df_bench.round(
+                            4), use_container_width=True, hide_index=True)
 
                         # Mejor modelo resaltado
                         best = df_bench.iloc[0]
                         st.markdown(
                             f"<div class='metric-grid'>"
                             + metric_html("🏆 Mejor modelo", best["Modelo"])
-                            + metric_html("F1 Score", f"{best['F1']:.4f}", "neutral")
-                            + metric_html("Accuracy", f"{best['Accuracy']:.4f}", "neutral")
-                            + metric_html("Precision", f"{best['Precision']:.4f}")
+                            + metric_html("F1 Score",
+                                          f"{best['F1']:.4f}", "neutral")
+                            + metric_html("Accuracy",
+                                          f"{best['Accuracy']:.4f}", "neutral")
+                            + metric_html("Precision",
+                                          f"{best['Precision']:.4f}")
                             + "</div>",
                             unsafe_allow_html=True,
                         )
 
                         # Gráfico radar de métricas
-                        metrics_cols = ["Accuracy", "Precision", "Recall", "F1"]
+                        metrics_cols = ["Accuracy",
+                                        "Precision", "Recall", "F1"]
                         fig_radar = go.Figure()
-                        palette = ["#4ade80", "#60a5fa", "#f59e0b", "#f87171", "#c084fc"]
+                        palette = ["#4ade80", "#60a5fa",
+                                   "#f59e0b", "#f87171", "#c084fc"]
                         for i, row in df_bench.iterrows():
-                            vals = [row[m] for m in metrics_cols] + [row[metrics_cols[0]]]
+                            vals = [row[m] for m in metrics_cols] + \
+                                [row[metrics_cols[0]]]
                             fig_radar.add_trace(go.Scatterpolar(
                                 r=vals,
                                 theta=metrics_cols + [metrics_cols[0]],
                                 fill="toself",
                                 name=row["Modelo"],
-                                line_color=palette[list(df_bench.index).index(i) % len(palette)],
+                                line_color=palette[list(
+                                    df_bench.index).index(i) % len(palette)],
                                 opacity=0.75,
                             ))
                         fig_radar.update_layout(
@@ -818,7 +907,8 @@ elif pagina == "🤖  Clasificación":
                             title="Métricas por Modelo",
                             **plotly_px(),
                         )
-                        fig_bar.update_layout(**PLOTLY_LAYOUT, yaxis_range=[0, 1])
+                        fig_bar.update_layout(
+                            **PLOTLY_LAYOUT, yaxis_range=[0, 1])
                         st.plotly_chart(fig_bar, use_container_width=True)
 
                         # AUC por modelo
@@ -830,17 +920,22 @@ elif pagina == "🤖  Clasificación":
                                     clf = estimator_cls(random_state=42)
                                 except TypeError:
                                     clf = estimator_cls()
-                                pipe = make_pipeline(SimpleImputer(strategy='median'), StandardScaler(), clf)
-                                pipe.fit(modelo_sup.X_train, modelo_sup.y_train)
+                                pipe = make_pipeline(SimpleImputer(
+                                    strategy='median'), StandardScaler(), clf)
+                                pipe.fit(modelo_sup.X_train,
+                                         modelo_sup.y_train)
                                 auc_dict_m, _, _ = compute_auc_multiclass(
                                     pipe, modelo_sup.X_test, modelo_sup.y_test)
                                 if auc_dict_m:
-                                    auc_rows.append({"Modelo": nombre, "AUC Macro": round(auc_dict_m["macro"], 4)})
+                                    auc_rows.append(
+                                        {"Modelo": nombre, "AUC Macro": round(auc_dict_m["macro"], 4)})
                             except Exception:
                                 pass
                         if auc_rows:
-                            df_auc = pd.DataFrame(auc_rows).sort_values("AUC Macro", ascending=False)
-                            st.dataframe(df_auc, use_container_width=True, hide_index=True)
+                            df_auc = pd.DataFrame(auc_rows).sort_values(
+                                "AUC Macro", ascending=False)
+                            st.dataframe(
+                                df_auc, use_container_width=True, hide_index=True)
                             fig_auc = px.bar(
                                 df_auc, x="Modelo", y="AUC Macro",
                                 title="AUC Macro por Modelo",
@@ -848,7 +943,8 @@ elif pagina == "🤖  Clasificación":
                                 color_continuous_scale=["#1f2433", "#4ade80"],
                                 **plotly_px(),
                             )
-                            fig_auc.update_layout(**PLOTLY_LAYOUT, yaxis_range=[0, 1])
+                            fig_auc.update_layout(
+                                **PLOTLY_LAYOUT, yaxis_range=[0, 1])
                             st.plotly_chart(fig_auc, use_container_width=True)
 
                     except Exception as e:
@@ -861,14 +957,17 @@ elif pagina == "🤖  Clasificación":
             section("Comparar técnicas de balanceo")
             cb_b1, cb_b2, cb_b3 = st.columns(3)
             with cb_b1:
-                modelo_bal = st.selectbox("Modelo base", list(ESTIMATOR_MAP.keys()), key="bal_model")
+                modelo_bal = st.selectbox("Modelo base", list(
+                    ESTIMATOR_MAP.keys()), key="bal_model")
             with cb_b2:
                 n_folds_bal = st.slider("Folds (k)", 2, 15, 5, key="bal_folds")
-                cv_bal = st.selectbox("Método CV", ["stratified", "kfold"], key="bal_cv")
+                cv_bal = st.selectbox(
+                    "Método CV", ["stratified", "kfold"], key="bal_cv")
             with cb_b3:
                 scoring_bal = st.selectbox("Métrica",
-                    ["accuracy", "f1_weighted", "precision_weighted", "recall_weighted"],
-                    key="bal_scoring")
+                                           ["accuracy", "f1_weighted",
+                                               "precision_weighted", "recall_weighted"],
+                                           key="bal_scoring")
 
             st.markdown("""
             <div style='background:#1a2235;border:1px solid #2d3a55;border-radius:8px;
@@ -894,14 +993,16 @@ elif pagina == "🤖  Clasificación":
                             scale=True,
                         )
                         section("Resultados por técnica de balanceo")
-                        st.dataframe(df_bal.round(4), use_container_width=True, hide_index=True)
+                        st.dataframe(df_bal.round(
+                            4), use_container_width=True, hide_index=True)
 
                         # Métricas rápidas
                         best_bal = df_bal.dropna(subset=["Promedio"]).iloc[0]
                         st.markdown(
                             f"<div class='metric-grid'>"
                             + metric_html("Mejor técnica", best_bal["Balance"])
-                            + metric_html(f"{scoring_bal}", f"{best_bal['Promedio']:.4f}", "neutral")
+                            + metric_html(f"{scoring_bal}",
+                                          f"{best_bal['Promedio']:.4f}", "neutral")
                             + metric_html("Std", f"{best_bal['Std']:.4f}")
                             + "</div>",
                             unsafe_allow_html=True,
@@ -931,23 +1032,28 @@ elif pagina == "🤖  Clasificación":
                         st.plotly_chart(fig_bal, use_container_width=True)
 
                         # Antes vs Después
-                        baseline = df_bal_clean[df_bal_clean["Balance"] == "none"]["Promedio"].values
+                        baseline = df_bal_clean[df_bal_clean["Balance"]
+                                                == "none"]["Promedio"].values
                         if len(baseline) > 0:
                             baseline_val = baseline[0]
-                            df_delta = df_bal_clean[df_bal_clean["Balance"] != "none"].copy()
-                            df_delta["Δ vs baseline"] = df_delta["Promedio"] - baseline_val
+                            df_delta = df_bal_clean[df_bal_clean["Balance"] != "none"].copy(
+                            )
+                            df_delta["Δ vs baseline"] = df_delta["Promedio"] - \
+                                baseline_val
                             section("Ganancia vs sin balanceo")
                             fig_delta = px.bar(
                                 df_delta, x="Balance", y="Δ vs baseline",
                                 title="Ganancia (Δ) respecto a sin balanceo",
                                 color="Δ vs baseline",
-                                color_continuous_scale=["#f87171", "#13161e", "#4ade80"],
+                                color_continuous_scale=[
+                                    "#f87171", "#13161e", "#4ade80"],
                                 **plotly_px(),
                             )
                             fig_delta.add_hline(y=0, line_dash="dash",
                                                 line_color="#4b5563", line_width=1)
                             fig_delta.update_layout(**PLOTLY_LAYOUT)
-                            st.plotly_chart(fig_delta, use_container_width=True)
+                            st.plotly_chart(
+                                fig_delta, use_container_width=True)
 
                     except Exception as e:
                         st.error(f"Error en análisis de balanceo: {e}")
@@ -965,14 +1071,17 @@ elif pagina == "🤖  Clasificación":
             with st.spinner("Evaluando modelos de regresión…"):
                 try:
                     df_reg = modelo_sup.benchmark_regresion()
-                    st.dataframe(df_reg.round(4), use_container_width=True, hide_index=True)
+                    st.dataframe(df_reg.round(
+                        4), use_container_width=True, hide_index=True)
 
                     best_reg = df_reg.iloc[0]
                     st.markdown(
                         f"<div class='metric-grid'>"
                         + metric_html("🏆 Mejor modelo", best_reg["Modelo"])
-                        + metric_html("RMSE", f"{best_reg['RMSE']:.4f}", "neutral")
-                        + metric_html("MAE", f"{best_reg['MAE']:.4f}", "neutral")
+                        + metric_html("RMSE",
+                                      f"{best_reg['RMSE']:.4f}", "neutral")
+                        + metric_html("MAE",
+                                      f"{best_reg['MAE']:.4f}", "neutral")
                         + metric_html("ER", f"{best_reg['ER']:.4f}")
                         + "</div>",
                         unsafe_allow_html=True,
@@ -1049,7 +1158,8 @@ elif pagina == "📈  Series de Tiempo":
         df_ts[col_fecha] = parse_dates_column(df_ts[col_fecha])
         invalid_dates = df_ts[df_ts[col_fecha].isna()]
         if len(invalid_dates) > 0:
-            st.error(f"Se encontraron {len(invalid_dates)} fechas inválidas. Revise la columna.")
+            st.error(
+                f"Se encontraron {len(invalid_dates)} fechas inválidas. Revise la columna.")
             st.stop()
         df_ts[col_fecha] = df_ts[col_fecha].dt.tz_convert(None)
         df_ts = df_ts.dropna(subset=[col_valor])
@@ -1070,13 +1180,17 @@ elif pagina == "📈  Series de Tiempo":
     section("Información de la serie")
     ci1, ci2, ci3, ci4 = st.columns(4)
     with ci1:
-        st.markdown(metric_html("Observaciones", f"{len(serie):,}"), unsafe_allow_html=True)
+        st.markdown(metric_html("Observaciones",
+                    f"{len(serie):,}"), unsafe_allow_html=True)
     with ci2:
-        st.markdown(metric_html("Media", f"{serie.mean():.2f}", "neutral"), unsafe_allow_html=True)
+        st.markdown(metric_html(
+            "Media", f"{serie.mean():.2f}", "neutral"), unsafe_allow_html=True)
     with ci3:
-        st.markdown(metric_html("Mín", f"{serie.min():.2f}"), unsafe_allow_html=True)
+        st.markdown(metric_html(
+            "Mín", f"{serie.min():.2f}"), unsafe_allow_html=True)
     with ci4:
-        st.markdown(metric_html("Máx", f"{serie.max():.2f}"), unsafe_allow_html=True)
+        st.markdown(metric_html(
+            "Máx", f"{serie.max():.2f}"), unsafe_allow_html=True)
 
     # ── Visualización principal ───────────────────────────────────────────────
     section("Comportamiento temporal")
@@ -1108,7 +1222,8 @@ elif pagina == "📈  Series de Tiempo":
 
     # ── Estadísticas adicionales ──────────────────────────────────────────────
     with st.expander("Estadísticas descriptivas completas"):
-        st.dataframe(serie.describe().to_frame().T.round(4), use_container_width=True)
+        st.dataframe(serie.describe().to_frame().T.round(4),
+                     use_container_width=True)
 
     # ── Descomposición estacional ─────────────────────────────────────────────
     section("Análisis de tendencia y estacionalidad")
@@ -1122,9 +1237,11 @@ elif pagina == "📈  Series de Tiempo":
         period = freq_map.get(freq_str, min(12, len(serie) // 3))
 
         if len(serie) >= 2 * period:
-            decomp = seasonal_decompose(serie, model="additive", period=period, extrapolate_trend="freq")
+            decomp = seasonal_decompose(
+                serie, model="additive", period=period, extrapolate_trend="freq")
             fig_dec = make_subplots(rows=4, cols=1, shared_xaxes=True,
-                                    subplot_titles=["Original", "Tendencia", "Estacionalidad", "Residuo"],
+                                    subplot_titles=[
+                                        "Original", "Tendencia", "Estacionalidad", "Residuo"],
                                     vertical_spacing=0.06)
             pairs = [
                 (serie, "#4ade80"),
@@ -1137,10 +1254,11 @@ elif pagina == "📈  Series de Tiempo":
                                              line=dict(color=color, width=1.5),
                                              showlegend=False), row=i, col=1)
             fig_dec.update_layout(height=600, title="Descomposición estacional (aditiva)",
-                                   **plotly_fig())
+                                  **plotly_fig())
             st.plotly_chart(fig_dec, use_container_width=True)
         else:
-            st.info(f"Se necesitan al menos {2*period} observaciones para la descomposición (actual: {len(serie)}).")
+            st.info(
+                f"Se necesitan al menos {2*period} observaciones para la descomposición (actual: {len(serie)}).")
     except Exception as e:
         st.info(f"Descomposición no disponible: {e}")
 
@@ -1149,7 +1267,7 @@ elif pagina == "📈  Series de Tiempo":
     try:
         from statsmodels.tsa.stattools import acf, pacf
         max_lags = min(40, len(serie) // 3)
-        acf_vals  = acf(serie.dropna(),  nlags=max_lags, fft=True)
+        acf_vals = acf(serie.dropna(),  nlags=max_lags, fft=True)
         pacf_vals = pacf(serie.dropna(), nlags=max_lags)
         ci = 1.96 / np.sqrt(len(serie))
         lags_x = list(range(len(acf_vals)))
@@ -1182,21 +1300,23 @@ elif pagina == "📈  Series de Tiempo":
     # ── Modelos ───────────────────────────────────────────────────────────────
     st.markdown("---")
 
-    tab_ind_ts, tab_bench_ts = st.tabs(["🎯  Modelo individual", "🏆  Comparar todos los modelos"])
+    tab_ind_ts, tab_bench_ts = st.tabs(
+        ["🎯  Modelo individual", "🏆  Comparar todos los modelos"])
 
     # ── Configuración de split ─────────────────────────────────────────────
-    test_pct_ts = st.slider("Tamaño del conjunto de prueba (%)", 10, 40, 20, key="ts_test") / 100
+    test_pct_ts = st.slider(
+        "Tamaño del conjunto de prueba (%)", 10, 40, 20, key="ts_test") / 100
     n_test = max(2, int(len(serie) * test_pct_ts))
     train_ts = serie.iloc[:-n_test]
-    test_ts  = serie.iloc[-n_test:]
+    test_ts = serie.iloc[-n_test:]
 
     # Preservar frecuencia
     if serie.index.freq is not None:
         try:
             train_ts = train_ts.copy()
-            test_ts  = test_ts.copy()
+            test_ts = test_ts.copy()
             train_ts.index.freq = serie.index.freq
-            test_ts.index.freq  = serie.index.freq
+            test_ts.index.freq = serie.index.freq
         except Exception:
             pass
 
@@ -1224,25 +1344,42 @@ elif pagina == "📈  Series de Tiempo":
 
                     if modelo_ts_sel == "Holt-Winters":
                         m = ts_train_obj.holt_winters()
-                        if m: pred = pd.Series(np.array(m.forecast(len(test_ts))), index=test_ts.index)
+                        if m:
+                            pred = pd.Series(
+                                np.array(m.forecast(len(test_ts))), index=test_ts.index)
 
                     elif modelo_ts_sel == "Holt-Winters calibrado":
                         m = ts_train_obj.holt_winters_calibrado(test_ts)
-                        if m: pred = pd.Series(np.array(m.forecast(len(test_ts))), index=test_ts.index)
+                        if m:
+                            pred = pd.Series(
+                                np.array(m.forecast(len(test_ts))), index=test_ts.index)
 
                     elif modelo_ts_sel == "ARIMA":
-                        m = ts_train_obj.arima()
-                        if m: pred = pd.Series(np.array(m.forecast(steps=len(test_ts))), index=test_ts.index)
+                        # FIX: Auto-detecta d + walk-forward para evitar colapso a la media
+                        m = ts_train_obj.arima(
+                            order=None,           # auto-detecta d con ADF
+                            test=test_ts,         # habilita walk-forward
+                            walk_forward=True,
+                        )
+                        if m:
+                            pred = pd.Series(
+                                np.array(m.forecast(steps=len(test_ts))), index=test_ts.index)
 
                     elif modelo_ts_sel == "ARIMA calibrado":
-                        m, best_order = ts_train_obj.arima_calibrado(test_ts)
+                        # Auto-detecta d + walk-forward para forecast robusto
+                        m, best_order = ts_train_obj.arima_calibrado(
+                            test_ts,
+                            walk_forward=True,  # FIX CLAVE: evita colapso
+                        )
                         if m:
-                            pred = pd.Series(np.array(m.forecast(steps=len(test_ts))), index=test_ts.index)
+                            pred = pd.Series(
+                                np.array(m.forecast(steps=len(test_ts))), index=test_ts.index)
                             nombre_pred = f"ARIMA {best_order}"
 
                     if pred is not None and not pred.isna().all():
                         # Métricas
-                        errores_obj = SeriesTiempo.calcular_errores(pred, test_ts, nombres=[nombre_pred])
+                        errores_obj = SeriesTiempo.calcular_errores(
+                            pred, test_ts, nombres=[nombre_pred])
                         df_err = errores_obj.df_errores()
 
                         st.markdown(
@@ -1250,7 +1387,8 @@ elif pagina == "📈  Series de Tiempo":
                             + metric_html("RMSE", f"{df_err['RMSE'].values[0]:.4f}", "neutral")
                             + metric_html("MAE", f"{df_err['MSE'].apply(np.sqrt).values[0]:.4f}")
                             + metric_html("CORR", f"{df_err['CORR'].values[0]:.4f}", "neutral")
-                            + metric_html("RE", f"{df_err['RE'].values[0]:.4f}")
+                            + metric_html("RE",
+                                          f"{df_err['RE'].values[0]:.4f}")
                             + "</div>",
                             unsafe_allow_html=True,
                         )
@@ -1276,7 +1414,8 @@ elif pagina == "📈  Series de Tiempo":
                         resid_std = (test_ts - pred).std()
                         fig_pred.add_trace(go.Scatter(
                             x=np.concatenate([pred.index, pred.index[::-1]]),
-                            y=np.concatenate([pred.values + resid_std, (pred.values - resid_std)[::-1]]),
+                            y=np.concatenate(
+                                [pred.values + resid_std, (pred.values - resid_std)[::-1]]),
                             fill="toself", fillcolor="rgba(74,222,128,0.08)",
                             line=dict(color="rgba(0,0,0,0)"),
                             name="Intervalo ±σ", showlegend=True,
@@ -1296,7 +1435,8 @@ elif pagina == "📈  Series de Tiempo":
                             x=residuos.index, y=residuos.values, mode="lines+markers",
                             line=dict(color="#f59e0b", width=1.5), showlegend=False,
                         ), row=1, col=1)
-                        fig_resid.add_hline(y=0, line_dash="dash", line_color="#4b5563", row=1, col=1)
+                        fig_resid.add_hline(
+                            y=0, line_dash="dash", line_color="#4b5563", row=1, col=1)
                         fig_resid.add_trace(go.Histogram(
                             x=residuos.values, marker_color="#f59e0b", opacity=0.8,
                             showlegend=False,
@@ -1318,11 +1458,15 @@ elif pagina == "📈  Series de Tiempo":
 
         cb_col1, cb_col2 = st.columns(2)
         with cb_col1:
-            inc_hw      = st.checkbox("Holt-Winters",          value=True,  key="inc_hw")
-            inc_hw_cal  = st.checkbox("Holt-Winters calibrado",value=True,  key="inc_hwc")
+            inc_hw = st.checkbox("Holt-Winters",
+                                 value=True,  key="inc_hw")
+            inc_hw_cal = st.checkbox(
+                "Holt-Winters calibrado", value=True,  key="inc_hwc")
         with cb_col2:
-            inc_arima     = st.checkbox("ARIMA",           value=True,  key="inc_arima")
-            inc_arima_cal = st.checkbox("ARIMA calibrado", value=True,  key="inc_arima_c")
+            inc_arima = st.checkbox(
+                "ARIMA",           value=True,  key="inc_arima")
+            inc_arima_cal = st.checkbox(
+                "ARIMA calibrado", value=True,  key="inc_arima_c")
 
         if st.button("▶  Ejecutar comparación de modelos", key="run_ts_bench"):
             if not any([inc_hw, inc_hw_cal, inc_arima, inc_arima_cal]):
@@ -1331,8 +1475,11 @@ elif pagina == "📈  Series de Tiempo":
                 with st.spinner("Comparando modelos… puede tardar unos segundos"):
                     try:
                         ts_train_obj2 = SeriesTiempo(ts=train_ts)
+                        # FIX: No pasar len(test_ts)/len(train_ts) porque causa un segundo split
+                        # agresivo dentro de benchmark_personalizado. Usar test_size=0.2 fijo
+                        # para mantener suficientes datos de entrenamiento para los modelos.
                         df_resultados = ts_train_obj2.benchmark_personalizado(
-                            test_size=len(test_ts) / len(train_ts),
+                            test_size=0.2,  # 20% del train_ts, no calcular del test_ts
                             incluir_hw=inc_hw,
                             incluir_hw_cal=inc_hw_cal,
                             incluir_arima=inc_arima,
@@ -1342,13 +1489,15 @@ elif pagina == "📈  Series de Tiempo":
 
                         if df_resultados is not None:
                             section("Tabla comparativa de errores")
-                            st.dataframe(df_resultados.round(4), use_container_width=True, hide_index=True)
+                            st.dataframe(df_resultados.round(
+                                4), use_container_width=True, hide_index=True)
 
                             # Mejor modelo
                             best_ts = df_resultados.sort_values("RMSE").iloc[0]
                             st.markdown(
                                 f"<div class='metric-grid'>"
-                                + metric_html("🏆 Mejor modelo", best_ts["Modelo"])
+                                + metric_html("🏆 Mejor modelo",
+                                              best_ts["Modelo"])
                                 + metric_html("RMSE", f"{best_ts['RMSE']:.4f}", "neutral")
                                 + metric_html("MAE", f"{best_ts['MSE']:.4f}")
                                 + metric_html("CORR", f"{best_ts['CORR']:.4f}", "neutral")
@@ -1377,7 +1526,8 @@ elif pagina == "📈  Series de Tiempo":
                                 marker_color="#4ade80",
                             )
                             fig_scatter_ts.update_layout(**PLOTLY_LAYOUT)
-                            st.plotly_chart(fig_scatter_ts, use_container_width=True)
+                            st.plotly_chart(
+                                fig_scatter_ts, use_container_width=True)
 
                             # Pronósticos superpuestos en el periodo de test
                             section("Pronósticos vs valores reales")
@@ -1394,12 +1544,21 @@ elif pagina == "📈  Series de Tiempo":
                                 name="Test (real)", mode="lines",
                                 line=dict(color="#60a5fa", width=2.5),
                             ))
-                            palette_ts = ["#4ade80", "#f59e0b", "#f87171", "#c084fc"]
+                            palette_ts = ["#4ade80", "#f59e0b",
+                                          "#f87171", "#c084fc"]
                             model_runners = []
-                            if inc_hw:      model_runners.append(("Holt-Winters",          lambda t: t.holt_winters()))
-                            if inc_hw_cal:  model_runners.append(("HW Calibrado",           lambda t: t.holt_winters_calibrado(test_ts)))
-                            if inc_arima:   model_runners.append(("ARIMA",                  lambda t: t.arima()))
-                            if inc_arima_cal: model_runners.append(("ARIMA Calibrado",      lambda t: t.arima_calibrado(test_ts)[0]))
+                            if inc_hw:
+                                model_runners.append(
+                                    ("Holt-Winters", lambda t: t.holt_winters()))
+                            if inc_hw_cal:
+                                model_runners.append(
+                                    ("HW Calibrado", lambda t: t.holt_winters_calibrado(test_ts)))
+                            if inc_arima:
+                                model_runners.append(
+                                    ("ARIMA", lambda t: t.arima()))
+                            if inc_arima_cal:
+                                model_runners.append(
+                                    ("ARIMA Calibrado", lambda t: t.arima_calibrado(test_ts)[0]))
 
                             for i, (nom, runner) in enumerate(model_runners):
                                 try:
@@ -1424,10 +1583,12 @@ elif pagina == "📈  Series de Tiempo":
                                 xaxis_title="Fecha", yaxis_title="Valor",
                                 **plotly_fig(), height=450,
                             )
-                            st.plotly_chart(fig_all_pred, use_container_width=True)
+                            st.plotly_chart(
+                                fig_all_pred, use_container_width=True)
 
                         else:
-                            st.error("No se generaron predicciones válidas. Intente con modelos individuales.")
+                            st.error(
+                                "No se generaron predicciones válidas. Intente con modelos individuales.")
 
                     except Exception as e:
                         st.error(f"Error en comparación: {e}")

@@ -2,6 +2,15 @@
 Paquete mineria avanzada- Jorge Chacon, Stacy Quesada
 Clases: EDA, Supervisado (hereda EDA), NoSupervisado (hereda EDA), WebScraping
 """
+from abc import ABCMeta, abstractmethod
+import statistics
+from numpy import corrcoef
+from scipy.stats import boxcox
+from scipy import signal
+from scipy.cluster.hierarchy import dendrogram, ward, single, complete, average, fcluster
+from math import ceil, pi
+import seaborn as sns
+import matplotlib.pyplot as plt
 import warnings
 import inspect
 import pandas as pd
@@ -19,22 +28,13 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import (train_test_split, KFold, StratifiedKFold,
-                                          TimeSeriesSplit, cross_val_score, cross_validate)
+                                     TimeSeriesSplit, cross_val_score, cross_validate)
 from sklearn.metrics import (confusion_matrix, accuracy_score, get_scorer,
-                               precision_score, recall_score, f1_score,
-                               mean_squared_error, mean_absolute_error, r2_score)
+                             precision_score, recall_score, f1_score,
+                             mean_squared_error, mean_absolute_error, r2_score)
 from sklearn.decomposition import PCA
 import matplotlib
 matplotlib.use('Agg')  # backend no-interactivo; compatible con Streamlit
-import matplotlib.pyplot as plt
-import seaborn as sns
-from math import ceil, pi
-from scipy.cluster.hierarchy import dendrogram, ward, single, complete, average, fcluster
-from scipy import signal
-from scipy.stats import boxcox
-from numpy import corrcoef
-import statistics
-from abc import ABCMeta, abstractmethod
 
 # Imports opcionales
 try:
@@ -114,7 +114,7 @@ def error_handler_decorator(func):
 
 def _tiene_parametro(clase, nombre_param):
     """Verifica de forma segura si un modelo sklearn acepta un parámetro dado.
-    
+
     FIX: reemplaza el uso frágil de __code__.co_varnames que fallaba con
     clases que usan herencia o *args/**kwargs.
     """
@@ -177,7 +177,6 @@ class EDA:
         print(f"\nDescripción:\n{self.df.describe()}")
         print(f"\nNulos:\n{self.df.isnull().sum()}")
         return self
-
 
     def _plot(self, kind, title, figsize=(12, 8), show=True, **kwargs):
         fig, ax = plt.subplots(figsize=figsize, dpi=150)
@@ -247,21 +246,73 @@ class Supervisado(EDA):
     def _asegurar_df_encoded(self):
         if not hasattr(self, 'df_encoded'):
             df_encoded = self.df.copy()
+            # Convertir TODAS las columnas a numéricas - GARANTIZADO
             for col in df_encoded.columns:
-                if df_encoded[col].dtype == 'object':
-                    df_encoded[col] = df_encoded[col].astype('category').cat.codes
+                col_str = df_encoded[col].astype(str)
+
+                # Intenta conversión numérica (reemplaza comas)
+                col_numeric = pd.to_numeric(
+                    col_str.str.replace(',', '.', regex=False),
+                    errors='coerce'
+                )
+
+                # Calcula tasa de éxito
+                success_rate = col_numeric.notna().sum(
+                ) / len(col_numeric) if len(col_numeric) > 0 else 0
+
+                if success_rate > 0.5:
+                    # Mayoría se convirtió: usar versión numérica
+                    df_encoded[col] = col_numeric
+                    if df_encoded[col].isna().any():
+                        med = df_encoded[col].median()
+                        if pd.notna(med):
+                            df_encoded[col].fillna(med, inplace=True)
+                        else:
+                            df_encoded[col].fillna(0, inplace=True)
+                else:
+                    # No se pudo convertir: usar códigos categóricos
+                    df_encoded[col] = pd.Categorical(df_encoded[col]).codes
             self.df_encoded = df_encoded
 
     def preparar_datos(self, test_size=0.25, random_state=42):
-        """Prepara datos para clasificación o regresión sin escalado (se hace en pipeline)."""
-        df_encoded = self.df.copy()
-        for col in df_encoded.columns:
-            if df_encoded[col].dtype == 'object':
-                df_encoded[col] = df_encoded[col].astype('category').cat.codes
-        self.df_encoded = df_encoded
+        """Prepara datos normalizando decimales con coma y convirtiendo tipos.
+        GARANTIZA que todas las columnas sean numéricas al final."""
+        df_prep = self.df.copy()
 
-        X = df_encoded.drop(columns=[self.target_col])
-        y = df_encoded[self.target_col]
+        # Convertir TODAS las columnas a numéricas - GARANTIZADO
+        for col in df_prep.columns:
+            col_str = df_prep[col].astype(str)
+
+            # Intenta primero conversión numérica (reemplaza comas)
+            col_numeric = pd.to_numeric(
+                col_str.str.replace(',', '.', regex=False),
+                errors='coerce'
+            )
+
+            # Calcula tasa de éxito
+            success_rate = col_numeric.notna().sum(
+            ) / len(col_numeric) if len(col_numeric) > 0 else 0
+
+            if success_rate > 0.5:
+                # Mayoría de valores se convirtieron: usar la versión numérica
+                df_prep[col] = col_numeric
+                # Rellenar NaN restantes con la mediana
+                if df_prep[col].isna().any():
+                    med = df_prep[col].median()
+                    if pd.notna(med):
+                        df_prep[col].fillna(med, inplace=True)
+                    else:
+                        # Si mediana es NaN (todos NaN), llenar con 0
+                        df_prep[col].fillna(0, inplace=True)
+            else:
+                # No se pudo convertir a numérica: convertir a códigos categóricos
+                # Esto mapea cada valor único a un entero (0, 1, 2, ...)
+                df_prep[col] = pd.Categorical(df_prep[col]).codes
+
+        self.df_encoded = df_prep
+
+        X = df_prep.drop(columns=[self.target_col])
+        y = df_prep[self.target_col]
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             X, y, test_size=test_size, random_state=random_state)
         print(
@@ -304,7 +355,8 @@ class Supervisado(EDA):
             for cls, n in counts.items():
                 cls_idx = y[y == cls].index.to_numpy()
                 if n < max_count:
-                    extra = np.random.choice(cls_idx, size=(max_count - n), replace=True)
+                    extra = np.random.choice(
+                        cls_idx, size=(max_count - n), replace=True)
                     idx = np.concatenate([cls_idx, extra])
                 else:
                     idx = cls_idx
@@ -335,7 +387,8 @@ class Supervisado(EDA):
 
             X_num = X.select_dtypes(include=[np.number]).copy()
             if X_num.shape[1] == 0:
-                print("ADVERTENCIA: SMOTE requiere columnas numéricas. Se devuelven datos originales.")
+                print(
+                    "ADVERTENCIA: SMOTE requiere columnas numéricas. Se devuelven datos originales.")
                 return X, y
 
             if X_num.isna().any().any():
@@ -352,13 +405,15 @@ class Supervisado(EDA):
                 X_cls = X_num.loc[cls_idx].to_numpy()
                 if len(X_cls) < 2:
                     continue
-                neigh = NearestNeighbors(n_neighbors=min(5, len(X_cls)), metric='euclidean')
+                neigh = NearestNeighbors(n_neighbors=min(
+                    5, len(X_cls)), metric='euclidean')
                 neigh.fit(X_cls)
                 n_samples = max_count - n
                 synthetic = []
                 for _ in range(n_samples):
                     idx = np.random.randint(0, len(X_cls))
-                    nn = neigh.kneighbors([X_cls[idx]], return_distance=False)[0]
+                    nn = neigh.kneighbors(
+                        [X_cls[idx]], return_distance=False)[0]
                     nn = nn[nn != idx]
                     if len(nn) == 0:
                         neighbor = X_cls[idx]
@@ -380,12 +435,12 @@ class Supervisado(EDA):
         return X, y
 
     def _entrenar_clasificador(self, modelo, nombre, scale=True, balance_method=None,
-                                class_weight=None, random_state=42, **params):
+                               class_weight=None, random_state=42, **params):
         print(f"\n{nombre}")
         X_train, y_train = self.X_train.copy(), self.y_train.copy()
         if balance_method in ['oversample', 'undersample', 'smote']:
             X_train, y_train = self._balance_data(X_train, y_train, method=balance_method,
-                                                   random_state=random_state)
+                                                  random_state=random_state)
 
         if class_weight is not None and _tiene_parametro(modelo, 'class_weight'):
             params['class_weight'] = class_weight
@@ -482,7 +537,7 @@ class Supervisado(EDA):
             'Lineal':        self.regresion_lineal,
             'Lasso':         self.regresion_lasso,
             'Ridge':         self.regresion_ridge,
-            'SVM (RBF)':     lambda: self.regresion_svm(kernel='rbf'),
+            'SVM (RBF)': lambda: self.regresion_svm(kernel='rbf'),
             'Decision Tree': self.regresion_decision_tree,
             'Random Forest': self.regresion_random_forest,
             'XGBoost':       self.regresion_xgboost,
@@ -504,8 +559,8 @@ class Supervisado(EDA):
         print("\n" + "="*70 + "\nBENCHMARK DE CLASIFICACION\n" + "="*70)
         modelos = {
             'KNN':          (KNeighborsClassifier, {'n_neighbors': 5}),
-            'Decision Tree':(DecisionTreeClassifier,  {'random_state': 42}),
-            'Random Forest':(RandomForestClassifier,  {'n_estimators': 100, 'random_state': 42}),
+            'Decision Tree': (DecisionTreeClassifier,  {'random_state': 42}),
+            'Random Forest': (RandomForestClassifier,  {'n_estimators': 100, 'random_state': 42}),
             'XGBoost':      (GradientBoostingClassifier, {'n_estimators': 100, 'random_state': 42}),
             'AdaBoost':     (AdaBoostClassifier,      {'n_estimators': 50,  'random_state': 42}),
         }
@@ -536,7 +591,8 @@ class Supervisado(EDA):
         if modelo is None:
             modelo = RandomForestClassifier
 
-        metodos = ['none', 'oversample', 'undersample', 'smote', 'class_weight']
+        metodos = ['none', 'oversample',
+                   'undersample', 'smote', 'class_weight']
         resultados = []
 
         for metodo in metodos:
@@ -544,8 +600,10 @@ class Supervisado(EDA):
 
             if metodo == 'class_weight':
                 if not _tiene_parametro(modelo, 'class_weight'):
-                    print(f"  ADVERTENCIA: {modelo.__name__} no acepta class_weight. Omitido.")
-                    resultados.append({'Balance': metodo, 'Promedio': float('nan'), 'Std': float('nan')})
+                    print(
+                        f"  ADVERTENCIA: {modelo.__name__} no acepta class_weight. Omitido.")
+                    resultados.append(
+                        {'Balance': metodo, 'Promedio': float('nan'), 'Std': float('nan')})
                     continue
                 res = self.validacion_cruzada(modelo, n_folds=n_folds, scale=scale,
                                               scoring=scoring, cv_method=cv_method,
@@ -562,13 +620,14 @@ class Supervisado(EDA):
                 'Std':      res['std'],
             })
 
-        df_res = pd.DataFrame(resultados).sort_values('Promedio', ascending=False)
+        df_res = pd.DataFrame(resultados).sort_values(
+            'Promedio', ascending=False)
         print(f"\nBenchmark de balanceo:\n{df_res.to_string(index=False)}")
         return df_res
 
     def validacion_cruzada(self, modelo, n_folds=10, scale=True, scoring='accuracy',
-                            cv_method='kfold', balance_method=None, balance_params=None,
-                            class_weight=None, **params):
+                           cv_method='kfold', balance_method=None, balance_params=None,
+                           class_weight=None, **params):
         """Validación cruzada con diferentes métodos de particionado.
 
         Parámetros
@@ -590,7 +649,8 @@ class Supervisado(EDA):
         print(f"\n{'='*70}")
         print(f"VALIDACION CRUZADA - {modelo.__name__}")
         print(f"{'='*70}")
-        print(f"Folds: {n_folds} | Métrica: {scoring} | CV method: {cv_method}")
+        print(
+            f"Folds: {n_folds} | Métrica: {scoring} | CV method: {cv_method}")
         if balance_method:
             print(f"Balanceo: {balance_method}")
 
@@ -622,11 +682,13 @@ class Supervisado(EDA):
         if cv_method == 'kfold':
             cv = KFold(n_splits=n_folds, shuffle=True, random_state=42)
         elif cv_method == 'stratified':
-            cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+            cv = StratifiedKFold(
+                n_splits=n_folds, shuffle=True, random_state=42)
         elif cv_method == 'timeseries':
             cv = TimeSeriesSplit(n_splits=n_folds)
         else:
-            raise ValueError("cv_method debe ser 'kfold', 'stratified' o 'timeseries'.")
+            raise ValueError(
+                "cv_method debe ser 'kfold', 'stratified' o 'timeseries'.")
 
         scorer = get_scorer(scoring)
         resultados = []
@@ -658,8 +720,8 @@ class Supervisado(EDA):
         }
 
     def validacion_cruzada_completa(self, modelo, n_folds=10, scale=True, cv_method='kfold',
-                                     balance_method=None, balance_params=None,
-                                     scoring=None, **params):
+                                    balance_method=None, balance_params=None,
+                                    scoring=None, **params):
         """Validación cruzada con múltiples métricas (clasificación y regresión).
 
         Retorna
@@ -699,11 +761,13 @@ class Supervisado(EDA):
         if cv_method == 'kfold':
             cv = KFold(n_splits=n_folds, shuffle=True, random_state=42)
         elif cv_method == 'stratified':
-            cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+            cv = StratifiedKFold(
+                n_splits=n_folds, shuffle=True, random_state=42)
         elif cv_method == 'timeseries':
             cv = TimeSeriesSplit(n_splits=n_folds)
         else:
-            raise ValueError("cv_method debe ser 'kfold', 'stratified' o 'timeseries'.")
+            raise ValueError(
+                "cv_method debe ser 'kfold', 'stratified' o 'timeseries'.")
 
         es_clasificacion = y.dtype == 'object' or len(np.unique(y)) < 20
 
@@ -711,14 +775,14 @@ class Supervisado(EDA):
             metric_funcs = {
                 'accuracy':           accuracy_score,
                 'precision_weighted': lambda yt, yp: precision_score(yt, yp, average='weighted', zero_division=0),
-                'recall_weighted':    lambda yt, yp: recall_score(yt, yp, average='weighted', zero_division=0),
-                'f1_weighted':        lambda yt, yp: f1_score(yt, yp, average='weighted', zero_division=0),
+                'recall_weighted': lambda yt, yp: recall_score(yt, yp, average='weighted', zero_division=0),
+                'f1_weighted': lambda yt, yp: f1_score(yt, yp, average='weighted', zero_division=0),
             }
         else:
             metric_funcs = {
                 'mse': lambda yt, yp: mean_squared_error(yt, yp),
                 'mae': lambda yt, yp: mean_absolute_error(yt, yp),
-                'r2':  lambda yt, yp: r2_score(yt, yp),
+                'r2': lambda yt, yp: r2_score(yt, yp),
             }
 
         scores = {m: [] for m in metric_funcs}
@@ -749,7 +813,8 @@ class Supervisado(EDA):
     def optimizar_con_ga(self, tipo='clasificacion', modelo='random_forest',
                          pop_size=8, generations=8):
         if not GENETIC_AVAILABLE:
-            print("ADVERTENCIA: sklearn-genetic-opt no instalado\nInstala: pip install sklearn-genetic-opt")
+            print(
+                "ADVERTENCIA: sklearn-genetic-opt no instalado\nInstala: pip install sklearn-genetic-opt")
             return None, None
         print("\n" + "="*70 + "\nOPTIMIZACION CON ALGORITMOS GENETICOS\n" + "="*70)
 
@@ -759,7 +824,7 @@ class Supervisado(EDA):
             param_grid = {
                 'n_estimators':     Integer(50, 200),
                 'max_depth':        Integer(3, 20),
-                'min_samples_split':Integer(2, 10),
+                'min_samples_split': Integer(2, 10),
                 'min_samples_leaf': Integer(1, 5),
             }
         else:
@@ -769,7 +834,7 @@ class Supervisado(EDA):
                 'n_estimators':     Integer(50, 200),
                 'learning_rate':    Continuous(0.01, 0.3),
                 'max_depth':        Integer(3, 10),
-                'min_samples_split':Integer(2, 10),
+                'min_samples_split': Integer(2, 10),
             }
 
         ga_search = GASearchCV(
@@ -780,21 +845,24 @@ class Supervisado(EDA):
 
         print(f"Ejecutando GA para {modelo} ({tipo})...")
         ga_search.fit(self.X_train, self.y_train)
-        print(f"\nOptimización completada!\n   Mejor score (CV): {ga_search.best_score_:.4f}\n   Mejores parámetros:")
+        print(
+            f"\nOptimización completada!\n   Mejor score (CV): {ga_search.best_score_:.4f}\n   Mejores parámetros:")
         for param, valor in ga_search.best_params_.items():
             print(f"      - {param}: {valor}")
 
         y_pred = ga_search.best_estimator_.predict(self.X_test)
         if tipo == 'clasificacion':
-            print(f"   Accuracy en Test: {accuracy_score(self.y_test, y_pred):.4f}")
+            print(
+                f"   Accuracy en Test: {accuracy_score(self.y_test, y_pred):.4f}")
         else:
-            print(f"\n   Errores en Test:\n{self._calcular_errores_regresion(self.y_test, y_pred).to_string(index=False)}")
+            print(
+                f"\n   Errores en Test:\n{self._calcular_errores_regresion(self.y_test, y_pred).to_string(index=False)}")
         return ga_search.best_estimator_, ga_search
-
 
     def arima_model(self, order=(1, 1, 1)):
         if not STATSMODELS_AVAILABLE:
-            print("ADVERTENCIA: statsmodels no disponible\nInstala: pip install statsmodels")
+            print(
+                "ADVERTENCIA: statsmodels no disponible\nInstala: pip install statsmodels")
             return None
         print(f"\nModelo ARIMA{order}")
         print("Para análisis completo usa: SeriesTiempo(ts).arima(...)")
@@ -802,7 +870,8 @@ class Supervisado(EDA):
 
     def sarima_model(self, order=(1, 1, 1), seasonal_order=(1, 1, 1, 12)):
         if not STATSMODELS_AVAILABLE:
-            print("ADVERTENCIA: statsmodels no disponible\nInstala: pip install statsmodels")
+            print(
+                "ADVERTENCIA: statsmodels no disponible\nInstala: pip install statsmodels")
             return None
         print(f"\nModelo SARIMA{order}x{seasonal_order}")
         print("Para análisis completo usa: SeriesTiempo(ts)")
@@ -814,7 +883,8 @@ class Supervisado(EDA):
 
     def exponential_smoothing(self, seasonal='add', seasonal_periods=12):
         if not STATSMODELS_AVAILABLE:
-            print("ADVERTENCIA: statsmodels no disponible\nInstala: pip install statsmodels")
+            print(
+                "ADVERTENCIA: statsmodels no disponible\nInstala: pip install statsmodels")
             return None
         print("\nSuavizado Exponencial (Holt-Winters)")
         print("Usa SeriesTiempo(ts=tu_serie).holt_winters(...)")
@@ -861,7 +931,8 @@ class NoSupervisado(EDA):
         datos = self.df_scaled if self.df_scaled is not None else self.df
 
         if scale and self.df_scaled is None:
-            pipeline = make_pipeline(StandardScaler(), PCA(n_components=n_componentes))
+            pipeline = make_pipeline(
+                StandardScaler(), PCA(n_components=n_componentes))
             componentes = pipeline.fit_transform(datos)
             pca = pipeline.named_steps['pca']
         else:
@@ -870,7 +941,8 @@ class NoSupervisado(EDA):
             pipeline = pca
 
         var_explicada = pca.explained_variance_ratio_ * 100
-        print(f"\nVarianza explicada: {[f'{v:.2f}%' for v in var_explicada]}, Total: {sum(var_explicada):.2f}%")
+        print(
+            f"\nVarianza explicada: {[f'{v:.2f}%' for v in var_explicada]}, Total: {sum(var_explicada):.2f}%")
 
         fig = None
         if plot and n_componentes >= 2:
@@ -925,8 +997,10 @@ class NoSupervisado(EDA):
         if scale and self.df_scaled is None:
             pipeline = make_pipeline(StandardScaler(), modelo)
             clusters = pipeline.fit_predict(datos)
-            centros = pipeline.named_steps[list(pipeline.named_steps.keys())[1]].cluster_centers_
-            datos_escalados = pipeline.named_steps['standardscaler'].transform(datos)
+            centros = pipeline.named_steps[list(pipeline.named_steps.keys())[
+                1]].cluster_centers_
+            datos_escalados = pipeline.named_steps['standardscaler'].transform(
+                datos)
         else:
             pipeline = modelo
             clusters = modelo.fit_predict(datos)
@@ -940,17 +1014,20 @@ class NoSupervisado(EDA):
 
         fig = None
         if plot:
-            fig = self._plot_clusters(datos_escalados, clusters, centros, nombre, show=show)
+            fig = self._plot_clusters(
+                datos_escalados, clusters, centros, nombre, show=show)
         return pipeline, clusters, centros, fig
 
     def kmeans(self, n_clusters=3, max_iter=500, n_init=150, plot=True, scale=True, show=True):
         return self._ejecutar_clustering(
-            KMeans(n_clusters=n_clusters, max_iter=max_iter, n_init=n_init, random_state=42),
+            KMeans(n_clusters=n_clusters, max_iter=max_iter,
+                   n_init=n_init, random_state=42),
             "K-Means", n_clusters, plot, scale=scale, show=show)
 
     def kmedoids(self, n_clusters=3, max_iter=500, plot=True, scale=True, show=True):
         return self._ejecutar_clustering(
-            KMedoids(n_clusters=n_clusters, max_iter=max_iter, metric='cityblock', random_state=42),
+            KMedoids(n_clusters=n_clusters, max_iter=max_iter,
+                     metric='cityblock', random_state=42),
             "K-Medoids", n_clusters, plot, scale=scale, show=show)
 
     def _plot_clusters(self, datos, clusters, centros, titulo, show=True):
@@ -958,7 +1035,8 @@ class NoSupervisado(EDA):
         componentes = pca.fit_transform(datos)
         centros_pca = pca.transform(centros)
         fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
-        colores = ['red', 'green', 'blue', 'orange', 'purple', 'brown', 'pink', 'gray']
+        colores = ['red', 'green', 'blue', 'orange',
+                   'purple', 'brown', 'pink', 'gray']
         for i in range(len(centros)):
             mask = clusters == i
             ax.scatter(componentes[mask, 0], componentes[mask, 1], c=colores[i % len(colores)],
@@ -1096,18 +1174,24 @@ class NoSupervisado(EDA):
     def radar_plot(centros, labels, show=True):
         centros_norm = np.array([((n - min(n)) / (max(n) - min(n)) * 100) if max(n) != min(n) else (n/n * 50)
                                  for n in centros.T])
-        angulos = [n / float(len(labels)) * 2 * pi for n in range(len(labels))] + [0]
-        fig, ax = plt.subplots(figsize=(10, 10), dpi=150, subplot_kw=dict(polar=True))
+        angulos = [n / float(len(labels)) * 2 *
+                   pi for n in range(len(labels))] + [0]
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=150,
+                               subplot_kw=dict(polar=True))
         ax.set_theta_offset(pi / 2)
         ax.set_theta_direction(-1)
         plt.xticks(angulos[:-1], labels)
-        plt.yticks([25, 50, 75, 100], ["25%", "50%", "75%", "100%"], color="grey", size=8)
+        plt.yticks([25, 50, 75, 100], ["25%", "50%",
+                   "75%", "100%"], color="grey", size=8)
         plt.ylim(0, 100)
         colores = ['blue', 'red', 'green', 'orange', 'purple']
         for i in range(centros_norm.shape[1]):
-            valores = centros_norm[:, i].tolist() + [centros_norm[:, i].tolist()[0]]
-            ax.plot(angulos, valores, linewidth=2, label=f'Cluster {i}', color=colores[i % len(colores)])
-            ax.fill(angulos, valores, alpha=0.25, color=colores[i % len(colores)])
+            valores = centros_norm[:, i].tolist(
+            ) + [centros_norm[:, i].tolist()[0]]
+            ax.plot(angulos, valores, linewidth=2,
+                    label=f'Cluster {i}', color=colores[i % len(colores)])
+            ax.fill(angulos, valores, alpha=0.25,
+                    color=colores[i % len(colores)])
         plt.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
         plt.title('Radar Plot - Comparación de Clusters', y=1.08)
         plt.tight_layout()
@@ -1163,9 +1247,11 @@ class Modelo(BaseModelo):
             if isinstance(ts.index, pd.DatetimeIndex) and ts.index.freqstr is not None:
                 self.__ts = ts
             else:
-                warnings.warn('ERROR: La serie debe tener un DatetimeIndex con frecuencia especificada.')
+                warnings.warn(
+                    'ERROR: La serie debe tener un DatetimeIndex con frecuencia especificada.')
         else:
-            warnings.warn('ERROR: El parámetro ts no es una instancia de serie de tiempo.')
+            warnings.warn(
+                'ERROR: El parámetro ts no es una instancia de serie de tiempo.')
 
     @property
     def coef(self):
@@ -1174,7 +1260,7 @@ class Modelo(BaseModelo):
 
 def _safe_freq(ts):
     """Retorna la frecuencia de la serie o 'D' como fallback seguro.
-    
+
     FIX: evita AttributeError en forecast cuando la frecuencia no pudo inferirse.
     """
     freq = getattr(ts.index, 'freq', None)
@@ -1196,7 +1282,8 @@ class meanfPrediccion(Prediccion):
     def forecast(self, steps=1):
         res = [self.modelo.coef for _ in range(steps)]
         freq = _safe_freq(self.modelo.ts)
-        fechas = pd.date_range(start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
+        fechas = pd.date_range(
+            start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
         return pd.Series(res, index=fechas[1:])
 
 
@@ -1207,7 +1294,8 @@ class naivePrediccion(Prediccion):
     def forecast(self, steps=1):
         res = [self.modelo.coef for _ in range(steps)]
         freq = _safe_freq(self.modelo.ts)
-        fechas = pd.date_range(start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
+        fechas = pd.date_range(
+            start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
         return pd.Series(res, index=fechas[1:])
 
 
@@ -1224,7 +1312,8 @@ class snaivePrediccion(Prediccion):
             res.append(self.modelo.coef[pos])
             pos += 1
         freq = _safe_freq(self.modelo.ts)
-        fechas = pd.date_range(start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
+        fechas = pd.date_range(
+            start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
         return pd.Series(res, index=fechas[1:])
 
 
@@ -1235,7 +1324,8 @@ class driftPrediccion(Prediccion):
     def forecast(self, steps=1):
         res = [self.modelo.ts[-1] + self.modelo.coef * i for i in range(steps)]
         freq = _safe_freq(self.modelo.ts)
-        fechas = pd.date_range(start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
+        fechas = pd.date_range(
+            start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
         return pd.Series(res, index=fechas[1:])
 
 
@@ -1304,9 +1394,11 @@ class HW_calibrado(Modelo):
         super().__init__(ts)
         self.__test = test
         if not STATSMODELS_AVAILABLE:
-            raise ImportError("statsmodels no disponible. Instala: pip install statsmodels")
+            raise ImportError(
+                "statsmodels no disponible. Instala: pip install statsmodels")
         if seasonal is not None:
-            self.__modelo = ExponentialSmoothing(ts, trend=trend, seasonal=seasonal)
+            self.__modelo = ExponentialSmoothing(
+                ts, trend=trend, seasonal=seasonal)
         else:
             self.__modelo = ExponentialSmoothing(ts, trend=trend)
 
@@ -1320,15 +1412,17 @@ class HW_calibrado(Modelo):
             if test.index.freqstr is not None:
                 self.__test = test
             else:
-                warnings.warn('ERROR: No se indica la frecuencia de la serie de tiempo.')
+                warnings.warn(
+                    'ERROR: No se indica la frecuencia de la serie de tiempo.')
         else:
-            warnings.warn('ERROR: El parámetro ts no es una instancia de serie de tiempo.')
+            warnings.warn(
+                'ERROR: El parámetro ts no es una instancia de serie de tiempo.')
 
     def fit(self, paso=0.1):
         if self.__modelo.trend is None and self.__modelo.seasonal is None:
             model_fit = self.__modelo.fit()
             alpha = getattr(model_fit.params, 'smoothing_level', None)
-            beta  = getattr(model_fit.params, 'smoothing_trend', None)
+            beta = getattr(model_fit.params, 'smoothing_trend', None)
             gamma = getattr(model_fit.params, 'smoothing_seasonal', None)
             return HW_Prediccion(model_fit, alpha, beta, gamma)
 
@@ -1336,15 +1430,17 @@ class HW_calibrado(Modelo):
         best_model = None
         best_params = {'alpha': None, 'beta': None, 'gamma': None}
         n = np.append(np.arange(0, 1, paso), 1)
-        has_trend    = self.__modelo.trend    is not None
+        has_trend = self.__modelo.trend is not None
         has_seasonal = self.__modelo.seasonal is not None
 
         for alpha in n:
             for beta in (n if has_trend else [None]):
                 for gamma in (n if has_seasonal else [None]):
                     fit_kwargs = {'smoothing_level': alpha}
-                    if beta  is not None: fit_kwargs['smoothing_trend']    = beta
-                    if gamma is not None: fit_kwargs['smoothing_seasonal'] = gamma
+                    if beta is not None:
+                        fit_kwargs['smoothing_trend'] = beta
+                    if gamma is not None:
+                        fit_kwargs['smoothing_seasonal'] = gamma
                     try:
                         model_fit = self.__modelo.fit(**fit_kwargs)
                         pred = np.array(model_fit.forecast(len(self.test)))
@@ -1352,14 +1448,15 @@ class HW_calibrado(Modelo):
                         if mse < error:
                             error = mse
                             best_model = model_fit
-                            best_params = {'alpha': alpha, 'beta': beta, 'gamma': gamma}
+                            best_params = {'alpha': alpha,
+                                           'beta': beta, 'gamma': gamma}
                     except Exception:
                         continue
 
         if best_model is None:
             model_fit = self.__modelo.fit()
             alpha = getattr(model_fit.params, 'smoothing_level', None)
-            beta  = getattr(model_fit.params, 'smoothing_trend', None)
+            beta = getattr(model_fit.params, 'smoothing_trend', None)
             gamma = getattr(model_fit.params, 'smoothing_seasonal', None)
             return HW_Prediccion(model_fit, alpha, beta, gamma)
 
@@ -1371,7 +1468,8 @@ class LSTM_TSPrediccion(Prediccion):
     def __init__(self, modelo):
         super().__init__(modelo)
         if not KERAS_AVAILABLE:
-            raise ImportError("Keras/TensorFlow no disponible. Instala: pip install tensorflow")
+            raise ImportError(
+                "Keras/TensorFlow no disponible. Instala: pip install tensorflow")
         self.__scaler = MinMaxScaler(feature_range=(0, 1))
         self.__X = self.__scaler.fit_transform(self.modelo.ts.to_frame())
 
@@ -1395,7 +1493,8 @@ class LSTM_TSPrediccion(Prediccion):
             self.__X = np.append(self.__X, pred.tolist(), axis=0)
 
         freq = _safe_freq(self.modelo.ts)
-        fechas = pd.date_range(start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
+        fechas = pd.date_range(
+            start=self.modelo.ts.index[-1], periods=steps + 1, freq=freq)
         return pd.Series(res, index=fechas[1:])
 
 
@@ -1403,7 +1502,8 @@ class LSTM_TS(Modelo):
     def __init__(self, ts, p=1, lstm_units=50, dense_units=1, optimizer='rmsprop', loss='mse'):
         super().__init__(ts)
         if not KERAS_AVAILABLE:
-            raise ImportError("Keras/TensorFlow no disponible. Instala: pip install tensorflow")
+            raise ImportError(
+                "Keras/TensorFlow no disponible. Instala: pip install tensorflow")
         try:
             from keras.models import Sequential
             from keras.layers import LSTM, Dense
@@ -1430,8 +1530,8 @@ class LSTM_TS(Modelo):
 # Clase de Errores para Series de Tiempo
 class ts_error:
     def __init__(self, preds, real, nombres=None):
-        self.__preds  = preds if isinstance(preds, list) else [preds]
-        self.__real   = real
+        self.__preds = preds if isinstance(preds, list) else [preds]
+        self.__real = real
         self.__nombres = nombres
 
     @property
@@ -1466,7 +1566,8 @@ class ts_error:
         if len(nombres) == len(self.__preds):
             self.__nombres = nombres
         else:
-            warnings.warn('ERROR: Los nombres no calzan con la cantidad de métodos.')
+            warnings.warn(
+                'ERROR: Los nombres no calzan con la cantidad de métodos.')
 
     def RSS(self):
         return [sum((pred - self.real)**2) for pred in self.preds]
@@ -1544,8 +1645,10 @@ class ts_error:
         fig = go.Figure()
         for i in df.index.values:
             p = df.loc[i].values.tolist() + df.loc[i].values.tolist()[:1]
-            fig.add_trace(go.Scatterpolar(r=p, theta=etqs, fill='toself', name=i))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[-10, 110])))
+            fig.add_trace(go.Scatterpolar(
+                r=p, theta=etqs, fill='toself', name=i))
+        fig.update_layout(polar=dict(
+            radialaxis=dict(visible=True, range=[-10, 110])))
         return fig
 
 
@@ -1580,7 +1683,8 @@ class Periodograma:
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.plot(self.freq, self.spec, color="darkgray")
         for i in range(best):
-            ax.axvline(x=res[i], label=f"Mejor {i + 1}", ls='--', c=np.random.rand(3,))
+            ax.axvline(
+                x=res[i], label=f"Mejor {i + 1}", ls='--', c=np.random.rand(3,))
         ax.set_xlabel('Frecuencia')
         ax.set_ylabel('Densidad Espectral')
         ax.set_title('Periodograma')
@@ -1598,14 +1702,56 @@ class Periodograma:
 
         res = self.mejor_freq(best)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=self.freq, y=self.spec, mode='lines+markers', line_color='darkgray'))
+        fig.add_trace(go.Scatter(x=self.freq, y=self.spec,
+                      mode='lines+markers', line_color='darkgray'))
         for i in range(best):
             v = np.random.rand(3)
             color = f"rgb({v[0]}, {v[1]}, {v[2]})"
             fig.add_vline(x=res[i], line_width=2, line_dash="dash",
                           annotation_text=f"Mejor {i + 1}", line_color=color)
-        fig.update_layout(title='Periodograma', xaxis_title='Frecuencia', yaxis_title='Densidad Espectral')
+        fig.update_layout(
+            title='Periodograma', xaxis_title='Frecuencia', yaxis_title='Densidad Espectral')
         return fig
+
+
+def _auto_d(ts, max_d=2, significance=0.05):
+    """Detecta orden de diferenciación óptimo con ADF test."""
+    if not STATSMODELS_AVAILABLE:
+        return 1
+    ts_series = pd.Series(ts) if not isinstance(ts, pd.Series) else ts
+    for d in range(max_d + 1):
+        try:
+            serie_diff = ts_series.diff(
+                d).dropna() if d > 0 else ts_series.dropna()
+            if len(serie_diff) < 10:
+                continue
+            p_value = adfuller(serie_diff, autolag='AIC')[1]
+            if p_value < significance:
+                return d
+        except Exception:
+            continue
+    return 1
+
+
+def _walk_forward_arima(ts_train, ts_test, order, seasonal_order=(0, 0, 0, 0)):
+    """Forecast ARIMA paso a paso refitando con valores reales."""
+    if not STATSMODELS_AVAILABLE:
+        return None
+    history = list(ts_train.values)
+    predictions = []
+    p, d, q = order
+    trend = 'c' if d == 0 else 'n'
+    for i in range(len(ts_test)):
+        try:
+            modelo = SARIMAX(history, order=order, seasonal_order=seasonal_order,
+                             trend=trend, enforce_stationarity=True, enforce_invertibility=True)
+            resultado = modelo.fit(disp=False, maxiter=200)
+            pred = float(resultado.forecast(steps=1)[0])
+            predictions.append(pred)
+        except Exception:
+            predictions.append(history[-1])
+        history.append(ts_test.values[i])
+    return np.array(predictions)
 
 
 # Clase Principal de Series de Tiempo
@@ -1628,9 +1774,11 @@ class SeriesTiempo:
                     ts = pd.to_numeric(ts, errors='coerce')
                     print("Los valores se convirtieron a numérico")
                 except Exception:
-                    raise ValueError("Los valores de la serie deben ser numéricos")
+                    raise ValueError(
+                        "Los valores de la serie deben ser numéricos")
             if ts.isna().any():
-                print(f"Advertencia: {ts.isna().sum()} valores no numéricos → NaN. Se rellenarán.")
+                print(
+                    f"Advertencia: {ts.isna().sum()} valores no numéricos → NaN. Se rellenarán.")
                 ts = ts.ffill().bfill()
             self.ts = ts
 
@@ -1644,10 +1792,14 @@ class SeriesTiempo:
                         try:
                             time_diffs = self.ts.index.to_series().diff().dropna()
                             if len(time_diffs) > 0:
-                                most_common_diff = time_diffs.value_counts().index[0]
-                                if   most_common_diff.days == 1:                                  self.ts.index.freq = 'D'
-                                elif most_common_diff.days == 7:                                  self.ts.index.freq = 'W'
-                                elif 28 <= most_common_diff.days <= 31:                           self.ts.index.freq = 'ME'
+                                most_common_diff = time_diffs.value_counts(
+                                ).index[0]
+                                if most_common_diff.days == 1:
+                                    self.ts.index.freq = 'D'
+                                elif most_common_diff.days == 7:
+                                    self.ts.index.freq = 'W'
+                                elif 28 <= most_common_diff.days <= 31:
+                                    self.ts.index.freq = 'ME'
                         except Exception:
                             pass
                 except Exception:
@@ -1655,7 +1807,8 @@ class SeriesTiempo:
 
             # Segunda pasada de NaN tras conversión (por si bfill no alcanzó)
             if self.ts.isna().any():
-                print(f"Advertencia: {self.ts.isna().sum()} NaN tras conversión. Se rellenarán.")
+                print(
+                    f"Advertencia: {self.ts.isna().sum()} NaN tras conversión. Se rellenarán.")
                 # FIX: mismo fix de ffill/bfill
                 self.ts = self.ts.ffill().bfill()
 
@@ -1709,7 +1862,8 @@ class SeriesTiempo:
         fig.add_trace(go.Scatter(x=self.ts.index, y=self.ts.values,
                                  mode='lines+markers', name='Serie'))
         fig.update_xaxes(rangeslider_visible=True)
-        fig.update_layout(title=title, xaxis_title='Fecha', yaxis_title='Valor')
+        fig.update_layout(title=title, xaxis_title='Fecha',
+                          yaxis_title='Valor')
         fig.show()
         return self
 
@@ -1725,7 +1879,7 @@ class SeriesTiempo:
     def drift(self):
         return drift(self.ts).fit()
 
-    def holt_winters(self, trend=None, seasonal=None, seasonal_periods=None):
+    def holt_winters(self, trend='add', seasonal='add', seasonal_periods=None):
         if not STATSMODELS_AVAILABLE:
             print("statsmodels no disponible. Instala: pip install statsmodels")
             return None
@@ -1735,11 +1889,11 @@ class SeriesTiempo:
         print(f"Holt-Winters ajustado (trend={trend}, seasonal={seasonal})")
         return modelo_fit
 
-    def holt_winters_calibrado(self, test, paso=0.1, trend=None, seasonal=None):
+    def holt_winters_calibrado(self, test, paso=0.1, trend='add', seasonal='add'):
         modelo = HW_calibrado(self.ts, test, trend, seasonal)
         resultado = modelo.fit(paso)
         # FIX: alpha/beta/gamma pueden ser None → format seguro
-        fmt = lambda v: f"{v:.3f}" if v is not None else "N/A"
+        def fmt(v): return f"{v:.3f}" if v is not None else "N/A"
         print(f"HW Calibrado - alpha: {fmt(resultado.alpha)}, "
               f"beta: {fmt(resultado.beta)}, gamma: {fmt(resultado.gamma)}")
         return resultado
@@ -1768,57 +1922,104 @@ class SeriesTiempo:
     def train_test_split(self, test_size=0.2):
         n_test = int(len(self.ts) * test_size)
         train = self.ts[:-n_test]
-        test  = self.ts[-n_test:]
+        test = self.ts[-n_test:]
         if hasattr(self.ts.index, 'freq') and self.ts.index.freq is not None:
             train.index.freq = self.ts.index.freq
-            test.index.freq  = self.ts.index.freq
-        print(f"Train: {len(train)} observaciones, Test: {len(test)} observaciones")
+            test.index.freq = self.ts.index.freq
+        print(
+            f"Train: {len(train)} observaciones, Test: {len(test)} observaciones")
         return train, test
 
-    def arima(self, order=(0, 1, 1), seasonal_order=(0, 0, 0, 0), trend='n'):
+    def arima(self, order=None, seasonal_order=(0, 0, 0, 0), trend=None,
+              test=None, walk_forward=True):
+        """ARIMA con auto-detect d + walk-forward."""
         if not STATSMODELS_AVAILABLE:
-            print("statsmodels no disponible. Instala: pip install statsmodels")
+            print("statsmodels no disponible")
             return None
-        modelo = SARIMAX(self.ts, order=order, seasonal_order=seasonal_order,
-                         trend=trend, enforce_stationarity=False, enforce_invertibility=False)
-        resultado = modelo.fit(disp=False)
-        print(f"ARIMA ajustado (order={order}, seasonal_order={seasonal_order})")
-        return resultado
+        if order is None:
+            d = _auto_d(self.ts)
+            order = (1, d, 1)
+            print(f"ADF → d={d}, order={order}")
+        else:
+            d = order[1]
+        if trend is None:
+            trend = 'c' if d == 0 else 'n'
+        try:
+            modelo = SARIMAX(self.ts, order=order, seasonal_order=seasonal_order,
+                             trend=trend, enforce_stationarity=True, enforce_invertibility=True)
+            resultado = modelo.fit(disp=False, maxiter=500)
+            if test is not None and walk_forward:
+                pred_wf = _walk_forward_arima(
+                    self.ts, test, order, seasonal_order)
 
-    def arima_calibrado(self, test, p_values=(0, 1, 2), d_values=(0, 1), q_values=(0, 1, 2),
-                        seasonal_order=(0, 0, 0, 0)):
+                class _WFResult:
+                    def __init__(self, p):
+                        self._p = p
+                        self.aic = resultado.aic
+
+                    def forecast(self, steps=None):
+                        return pd.Series(self._p)
+                print(f"ARIMA{order} walk-forward")
+                return _WFResult(pred_wf)
+            print(f"ARIMA{order} AIC={resultado.aic:.2f}")
+            return resultado
+        except Exception as e:
+            print(f"Error ARIMA: {e}")
+            return None
+
+    def arima_calibrado(self, test, p_values=None, d_values=None, q_values=None,
+                        seasonal_order=(0, 0, 0, 0), walk_forward=True):
+        """ARIMA calibrado con búsqueda por AIC + walk-forward."""
         if not STATSMODELS_AVAILABLE:
-            print("statsmodels no disponible. Instala: pip install statsmodels")
+            print("statsmodels no disponible")
             return None, None
-
-        best_score  = float("inf")
-        best_order  = None
+        if p_values is None:
+            p_values = (0, 1, 2)
+        if d_values is None:
+            d_opt = _auto_d(self.ts)
+            d_values = tuple(
+                sorted(set([max(0, d_opt - 1), d_opt, min(2, d_opt + 1)])))
+            print(f"ADF → d={d_opt}, búsqueda d={sorted(d_values)}")
+        if q_values is None:
+            q_values = (0, 1, 2)
+        best_score = float("inf")
+        best_order = None
         best_result = None
-        n_steps = len(test)
-
+        print("Fase 1: Búsqueda por AIC...")
         for p in p_values:
             for d in d_values:
                 for q in q_values:
+                    if p == 0 and q == 0:
+                        continue
+                    trend = 'c' if d == 0 else 'n'
                     try:
-                        modelo = SARIMAX(self.ts, order=(p, d, q),
-                                         seasonal_order=seasonal_order,
-                                         enforce_stationarity=False,
-                                         enforce_invertibility=False)
-                        resultado = modelo.fit(disp=False, maxiter=100, method='lbfgs')
-                        pred = np.array(resultado.forecast(steps=n_steps))
-                        mse = np.mean((test.values - pred) ** 2)
-                        if mse < best_score:
-                            best_score  = mse
-                            best_order  = (p, d, q)
+                        modelo = SARIMAX(self.ts, order=(p, d, q), seasonal_order=seasonal_order,
+                                         trend=trend, enforce_stationarity=True, enforce_invertibility=True)
+                        resultado = modelo.fit(disp=False, maxiter=200)
+                        aic = resultado.aic
+                        if np.isfinite(aic) and aic < best_score:
+                            best_score = aic
+                            best_order = (p, d, q)
                             best_result = resultado
                     except Exception:
                         continue
-
         if best_result is None:
-            print("No se pudo ajustar ningún modelo ARIMA con los parámetros dados")
+            print("No se pudo ajustar ARIMA")
             return None, None
+        print(f"Mejor orden: {best_order} (AIC={best_score:.2f})")
+        if walk_forward:
+            print(f"Fase 2: Walk-forward ({len(test)} pasos)...")
+            pred_wf = _walk_forward_arima(
+                self.ts, test, best_order, seasonal_order)
+            if pred_wf is not None:
+                class _WFResult:
+                    def __init__(self, p, r):
+                        self._p = p
+                        self.aic = r.aic
 
-        print(f"ARIMA calibrado (order={best_order}) - MSE en test: {best_score:.4f}")
+                    def forecast(self, steps=None):
+                        return pd.Series(self._p)
+                return _WFResult(pred_wf, best_result), best_order
         return best_result, best_order
 
     def benchmark(self, test_size=0.2, incluir_lstm=False,
@@ -1851,14 +2052,14 @@ class SeriesTiempo:
         )
 
     def benchmark_personalizado(self, test_size=0.2,
-                                 incluir_hw=True, incluir_hw_cal=True,
-                                 incluir_arima=True, incluir_arima_cal=True,
-                                 incluir_lstm=False,
-                                 lstm_kwargs=None, hw_kwargs=None, hw_cal_kwargs=None,
-                                 arima_order=(1, 1, 1), arima_cal_params=None):
+                                incluir_hw=True, incluir_hw_cal=True,
+                                incluir_arima=True, incluir_arima_cal=True,
+                                incluir_lstm=False,
+                                lstm_kwargs=None, hw_kwargs=None, hw_cal_kwargs=None,
+                                arima_order=(1, 1, 1), arima_cal_params=None):
         """Benchmark personalizado con selección de modelos a incluir."""
         train, test = self.train_test_split(test_size)
-        nombres      = []
+        nombres = []
         predicciones = []
 
         def _agregar(nombre, pred):
@@ -1884,7 +2085,8 @@ class SeriesTiempo:
         if incluir_hw_cal:
             try:
                 hw_cal_kwargs = hw_cal_kwargs or {}
-                m = SeriesTiempo(ts=train).holt_winters_calibrado(test, **hw_cal_kwargs)
+                m = SeriesTiempo(ts=train).holt_winters_calibrado(
+                    test, **hw_cal_kwargs)
                 if m is not None:
                     _agregar("Holt-Winters Calibrado", m.forecast(len(test)))
             except Exception as e:
@@ -1902,8 +2104,10 @@ class SeriesTiempo:
         # ARIMA calibrado
         if incluir_arima_cal:
             try:
-                arima_cal_params = arima_cal_params or {'p_values': (0, 1), 'd_values': (0, 1), 'q_values': (0, 1)}
-                m, _ = SeriesTiempo(ts=train).arima_calibrado(test, **arima_cal_params)
+                arima_cal_params = arima_cal_params or {
+                    'p_values': (0, 1), 'd_values': (0, 1), 'q_values': (0, 1)}
+                m, _ = SeriesTiempo(ts=train).arima_calibrado(
+                    test, **arima_cal_params)
                 if m is not None:
                     _agregar("ARIMA Calibrado", m.forecast(steps=len(test)))
             except Exception as e:
@@ -1912,7 +2116,8 @@ class SeriesTiempo:
         # LSTM (opcional)
         if incluir_lstm:
             try:
-                lstm_kwargs = lstm_kwargs or {'lstm_units': 20, 'dense_units': 1}
+                lstm_kwargs = lstm_kwargs or {
+                    'lstm_units': 20, 'dense_units': 1}
                 m = SeriesTiempo(ts=train).lstm(**lstm_kwargs)
                 if m is not None:
                     _agregar("Red Neuronal", m.forecast(len(test)))
@@ -1923,8 +2128,10 @@ class SeriesTiempo:
             print("No se pudieron generar predicciones para el benchmark.")
             return None
 
-        errores = SeriesTiempo.calcular_errores(predicciones, test, nombres=nombres)
-        df_resultados = errores.df_errores().reset_index().rename(columns={'index': 'Modelo'})
+        errores = SeriesTiempo.calcular_errores(
+            predicciones, test, nombres=nombres)
+        df_resultados = errores.df_errores().reset_index().rename(
+            columns={'index': 'Modelo'})
         return df_resultados
 
 
@@ -1972,7 +2179,8 @@ class WebScraping:
             print("HTML parseado")
             return BeautifulSoup(html, 'html.parser')
         except ImportError:
-            print("ERROR: beautifulsoup4 no instalado. Instala: pip install beautifulsoup4")
+            print(
+                "ERROR: beautifulsoup4 no instalado. Instala: pip install beautifulsoup4")
             return None
 
     def scrape_tabla_simple(self, url, selector='table', indice_tabla=0):
@@ -1986,11 +2194,12 @@ class WebScraping:
         if not tablas or indice_tabla >= len(tablas):
             print("No se encontraron tablas válidas")
             return None
-        tabla   = tablas[indice_tabla]
-        headers = [th.get_text(strip=True) for th in tabla.find('thead').find_all('th')] if tabla.find('thead') else []
-        tbody   = tabla.find('tbody') or tabla
-        rows    = [[td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
-                   for tr in tbody.find_all('tr') if tr.find_all(['td', 'th'])]
+        tabla = tablas[indice_tabla]
+        headers = [th.get_text(strip=True) for th in tabla.find(
+            'thead').find_all('th')] if tabla.find('thead') else []
+        tbody = tabla.find('tbody') or tabla
+        rows = [[td.get_text(strip=True) for td in tr.find_all(['td', 'th'])]
+                for tr in tbody.find_all('tr') if tr.find_all(['td', 'th'])]
         df = pd.DataFrame(rows, columns=headers if headers else None)
         print(f"Tabla extraída: {df.shape}")
         return df
@@ -2025,7 +2234,8 @@ class WebScraping:
         soup = self.parsear_html(html)
         if not soup:
             return None
-        imagenes = [img.get(atributo_src) for img in soup.find_all('img') if img.get(atributo_src)]
+        imagenes = [img.get(atributo_src)
+                    for img in soup.find_all('img') if img.get(atributo_src)]
         print(f"Extraídas {len(imagenes)} imágenes")
         return imagenes
 
@@ -2061,7 +2271,8 @@ class WebScraping:
 
     def descargar_archivo(self, url, nombre_archivo=None, directorio='descargas'):
         try:
-            import requests, os
+            import requests
+            import os
             if not os.path.exists(directorio):
                 os.makedirs(directorio)
             nombre_archivo = nombre_archivo or url.split('/')[-1]

@@ -178,10 +178,6 @@ class EDA:
         print(f"\nNulos:\n{self.df.isnull().sum()}")
         return self
 
-    # ------------------------------------------------------------------
-    # FIX (Streamlit): todos los métodos de graficación retornan fig.
-    # El parámetro show=True mantiene compatibilidad con uso standalone.
-    # ------------------------------------------------------------------
 
     def _plot(self, kind, title, figsize=(12, 8), show=True, **kwargs):
         fig, ax = plt.subplots(figsize=figsize, dpi=150)
@@ -248,10 +244,6 @@ class Supervisado(EDA):
         print(
             f"Supervisado inicializado - Target: {target_col}, Shape: {self.df.shape}")
 
-    # ------------------------------------------------------------------
-    # Codificación interna: garantiza que df_encoded siempre exista.
-    # FIX: evita data leakage en CV por falta de df_encoded.
-    # ------------------------------------------------------------------
     def _asegurar_df_encoded(self):
         if not hasattr(self, 'df_encoded'):
             df_encoded = self.df.copy()
@@ -343,11 +335,9 @@ class Supervisado(EDA):
 
             X_num = X.select_dtypes(include=[np.number]).copy()
             if X_num.shape[1] == 0:
-                # FIX: advertencia explícita en lugar de fallo silencioso
                 print("ADVERTENCIA: SMOTE requiere columnas numéricas. Se devuelven datos originales.")
                 return X, y
 
-            # Imputar NaN con la mediana antes de aplicar NearestNeighbors
             if X_num.isna().any().any():
                 X_num = X_num.fillna(X_num.median())
 
@@ -397,7 +387,6 @@ class Supervisado(EDA):
             X_train, y_train = self._balance_data(X_train, y_train, method=balance_method,
                                                    random_state=random_state)
 
-        # FIX: usa inspect en lugar de __code__.co_varnames
         if class_weight is not None and _tiene_parametro(modelo, 'class_weight'):
             params['class_weight'] = class_weight
         if _tiene_parametro(modelo, 'random_state') and 'random_state' not in params:
@@ -1832,7 +1821,6 @@ class SeriesTiempo:
         print(f"ARIMA calibrado (order={best_order}) - MSE en test: {best_score:.4f}")
         return best_result, best_order
 
-    # FIX: benchmark unificado — LSTM desactivado por defecto (requiere TensorFlow)
     def benchmark(self, test_size=0.2, incluir_lstm=False,
                   lstm_kwargs=None, hw_kwargs=None, hw_cal_kwargs=None,
                   arima_order=(1, 1, 1), arima_cal_params=None):
